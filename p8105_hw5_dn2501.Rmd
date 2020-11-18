@@ -8,6 +8,7 @@ date: 11/18/20
 ```{r setup, include = F}
 library(tidyverse)
 library(rvest)
+library(purrr)
 library(patchwork)
 
 knitr::opts_chunk$set(
@@ -25,6 +26,8 @@ options(
 
 scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
+
+set.seed(1)
 ```
 
 ## Problem 1
@@ -163,6 +166,98 @@ con_plot + exp_plot
 
 According to the two plots above, the subjects in the control arm showed random, varied changes over time throughout the longitudinal study. The subjects in the experimental arm, however, showed a generally gradual increase over the course of the 8-week longitudinal study.
 
+## Problem 3
 
+First, let's create our function:
 
+```{r fct, results = 'hide'}
+sim_t_test = function(n = 30, mu = mu, sigma = 5) {
+  
+  sim_data = 
+    tibble(
+      x = rnorm(n = n, mean = mu, sd = sigma)
+      )
+  
+  sim_data %>% t.test() %>% broom::tidy() %>% select(estimate, p.value)
+  
+}
 
+sim_t_test(mu = 0)
+```
+
+Next, let's run 5000 samples of size 30 by iteration:
+
+```{r iterate, warning = F, message = F, results = 'hide'}
+initial_sim = 
+  rerun(5000, sim_t_test(mu = 0)) %>% 
+  bind_rows()
+```
+
+Now, let's iterate these simulations using different mu values:
+
+```{r iteration over diff mus, warning = F, message = F}
+sim_results = 
+  tibble(
+    mu = c(0, 1, 2, 3, 4, 5, 6)
+)   %>% 
+    mutate(
+      output = map(.x = mu, ~rerun(5000, sim_t_test(mu = .x))), 
+      estimate_and_p = map(output, bind_rows)
+    ) %>%  
+  unnest() %>% 
+  select(-output)
+```
+
+Then, let's make a plot of the power of the test versus the true mu:
+
+```{r first plot, message = F}
+sim_results %>% 
+  group_by(mu) %>% 
+  filter(p.value < 0.05) %>% 
+  summarize(power = n()/5000) %>% 
+  ggplot(aes(x = mu, y = power)) +
+  geom_point() +
+  labs(
+    title = "Power vs True Mean",
+    x = "True Mean",
+    y = "Power"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+According to the above plot, as effect size increases, power increases as well. It can be seen that effect sizes of greater than 4 in this simulation led to powers very close to 1.
+
+Finally, let's plot estimates versus true means:
+
+```{r final plots, message = F}
+plot_all =  
+  sim_results %>% 
+  group_by(mu) %>% 
+  summarize(mean_estimate = mean(estimate)) %>% 
+  ggplot(aes(x = mu, y = mean_estimate)) +
+  geom_point(color = "purple") +
+  labs(
+    title = "Mean Estimate vs True Mean",
+    x = "True Mean",
+    y = "Mean Estimate"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot_reject = 
+  sim_results %>% 
+  group_by(mu) %>% 
+  filter(p.value < 0.05) %>%
+  summarize(mean_estimate = mean(estimate)) %>% 
+  ggplot(aes(x = mu, y = mean_estimate, color = purple)) +
+  geom_point(color = "orange") +
+  labs(
+    title = "Mean Estimate vs True Mean for Rejected Nulls",
+    x = "True Mean",
+    y = "Mean Estimate"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot_all + plot_reject
+```
+
+For the rejected nulls, the mean estimates are different because a larger proportion of their means were significantly different from the true mean as the effect size increased.
