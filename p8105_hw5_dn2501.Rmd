@@ -8,11 +8,12 @@ date: 11/18/20
 ```{r setup, include = F}
 library(tidyverse)
 library(rvest)
+library(patchwork)
 
 knitr::opts_chunk$set(
-  fig.width = 6,
+  fig.width = 7,
   fig.asp = .6,
-  out.width = "90%"
+  out.width = "95%"
 )
 
 theme_set(theme_minimal() + theme(legend.position = "bottom"))
@@ -89,4 +90,79 @@ results_df %>%
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 ```
+
+## Problem 2
+
+First, let's make a dataframe with a path for each file:
+
+```{r path df}
+path_df = 
+  tibble(path = list.files("lda_data")) %>% 
+  mutate(path = str_c("lda_data/", path))
+```
+
+Now, let's iterate the `read_csv` function across the dataframe using `map`:
+
+```{r read data iteration, message = F}
+lda_df = 
+  path_df %>% 
+  mutate(data = map(.x = path, ~read_csv(.x)))
+```
+
+Next, let's tidy this dataframe:
+
+```{r tidy df, warning = F}
+lda_df = 
+  lda_df %>% 
+  unnest() %>% 
+  pivot_longer(
+    week_1:week_8,
+    names_to = "week",
+    values_to = "observation"
+  ) %>% 
+  mutate(week = str_remove(week, "week_"),
+         week = as.numeric(week), 
+         arm_sub = str_remove(path, "^lda_data/"),
+         arm_sub = str_remove(arm_sub, ".csv$")) %>% 
+  separate(arm_sub, c("arm", "subject")) %>% 
+  relocate(arm, subject) %>% 
+  select(-path)
+```
+
+Finally, some spaghetti plots:
+
+```{r spaghetti plots}
+con_plot = 
+  lda_df %>% 
+  filter(arm == "con") %>% 
+  ggplot(aes(x = week, y = observation, color = subject)) +
+  geom_line() +
+  labs(
+    title = "Subjects in Control Arm",
+    x = "Week",
+    y = "Observation"
+  ) +
+  scale_colour_discrete(name = "Subject:") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+exp_plot = 
+  lda_df %>% 
+  filter(arm == "exp") %>% 
+  ggplot(aes(x = week, y = observation, color = subject)) +
+  geom_line() +
+  labs(
+    title = "Subjects in Experimental Arm",
+    x = "Week",
+    y = "Observation"
+  ) +
+  scale_colour_discrete(name = "Subject:") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+con_plot + exp_plot
+```
+
+According to the two plots above, the subjects in the control arm showed random, varied changes over time throughout the longitudinal study. The subjects in the experimental arm, however, showed a generally gradual increase over the course of the 8-week longitudinal study.
+
+
+
 
